@@ -74,60 +74,15 @@ void setup() {
 }
 
 #define IDLE_STATE 1
-#define SCAN_IN_TAG 2
-#define IDENTIFY_TAG 3
+#define SCAN_TAG 2
+#define ID_TAG 3
+#define ACCEL 4
+#define POURING 5
+#define BROADCAST 6
 
 int state = 1;
-
-void loop () {
-switch(state){
-
-  case IDLE_STATE:
-      {
-        bool read_tag = tag_activated();
-        if (read_tag){
-          state = SCAN_IN_TAG;
-        }
-      }
-    break;
-
-  case SCAN_IN_TAG:
-    {
-   // Serial.println("SCANIN");
-        int test = read_tag_in(out_data, data_size);
-        state = IDENTIFY_TAG;
-    }
-    break;
-
-  case IDENTIFY_TAG:
-    {
-      if (match_UPC(out_data, dataBlockN, data_size)){
-              Serial.println("Tag: Neutral");
-      }
-      if (match_UPC(out_data, dataBlock1, data_size)){
-              Serial.println("Tag: 1");
-      }
-      if (match_UPC(out_data, dataBlock2, data_size)){
-              Serial.println("Tag: 2");
-      }
-      state = IDLE_STATE;
-    }
-    break;
-  }
-
-}
-
-bool tag_activated(){
-  if ( ! mfrc522.PICC_IsNewCardPresent())
-        return false;
-
-    // Select one of the cards
-  if ( ! mfrc522.PICC_ReadCardSerial())
-        return false;
-
-  return true; 
-}
-
+long pour_total = 0;
+long pour_initial_time = 0;
 
 unsigned char out_data[16];
 byte data_size = 16;
@@ -151,6 +106,19 @@ unsigned char dataBlockN[]    = {
     0x8C, 0xEF, 0x00, 0x00, // 1000 1100 1110 1111
     0x00, 0x00, 0x00, 0x00  // neutral tag code
     };
+
+
+bool tag_activated(){
+  if ( ! mfrc522.PICC_IsNewCardPresent())
+        return false;
+
+    // Select one of the cards
+  if ( ! mfrc522.PICC_ReadCardSerial())
+        return false;
+
+  return true; 
+}
+
 
 bool match_UPC(unsigned char *rec_data, unsigned char *static_data, byte data_len){
   for (byte i = 0; i<data_len; i++){
@@ -176,7 +144,7 @@ int read_tag_in(unsigned char* out_data, byte od_size){
     // In this sample we use the second sector,
     // that is: sector #1, covering block #4 up to and including block #7
     //byte sector         = 1;
-    //byte blockAddr      = 5;
+    byte blockAddr      = 5;
     /*
     unsigned char dataBlockN[]    = {
         0x00, 0x00, 0x00, 0x00, 
@@ -231,4 +199,100 @@ int read_tag_in(unsigned char* out_data, byte od_size){
     mfrc522.PICC_HaltA();
     // Stop encryption on PCD
     mfrc522.PCD_StopCrypto1();
+}
+
+bool read_accel(){
+    // read the sensor
+    IMU.readSensor();
+  
+    double y=-1*IMU.getAccelY_mss();
+    double z=IMU.getAccelZ_mss();
+    double x=IMU.getAccelX_mss();
+ /*   Serial.print("Acceleration Due to Gravity in X, Y and Z direction\t");
+    Serial.print(x,6);
+    Serial.print("   ");
+    Serial.print(y,6);
+    Serial.print("   ");
+ */   Serial.println(z,6);
+    double phi=atan2(sqrt(x*x+y*y),z)*180/3.1415;
+    double theta=atan2(y,x)*180/3.1415;
+  /*  Serial.print("Angles phi and theta of Gravity vector     ");
+    Serial.print(phi,6);
+    Serial.print("    ");
+    Serial.println(theta,6);
+  */ 
+  if (theta<-0.87266 && theta>-2.44346 && phi<1.39626 && phi>0.34906){
+      digitalWrite(12,HIGH);
+      return true;
+      }
+    else{
+      digitalWrite(12,LOW);
+      return false;
+      }
+
+      
+    //delay(20);
+
+}
+
+void loop () {
+switch(state){
+
+  case IDLE_STATE:
+      {
+        bool read_tag = tag_activated();
+        if (read_tag){
+          state = SCAN_TAG;
+        }
+      }
+    break;
+
+  case SCAN_TAG:
+    {
+   // Serial.println("SCANIN");
+        int test = read_tag_in(out_data, data_size);
+        state = ID_TAG;
+    }
+    break;
+
+  case ID_TAG:
+    {
+      if (match_UPC(out_data, dataBlockN, data_size)){
+              Serial.println("Tag: Neutral");
+              state = IDLE_STATE;
+      }
+      else{
+        state = ACCEL;
+        pour_total = 0;
+      }
+    }
+    break;
+
+  case ACCEL:
+    {
+      bool critical_angle;
+      bool read_tag;
+      read_tag = tag_activated();
+      critical_angle = read_accel();
+      if (critical_angle){
+        pour_initial_time = millis();
+        state = POURING;
+      }
+      else if(read_tag){
+        state = BROADCAST;
+      }
+    }
+
+  case POURING:
+    {
+      bool critical_angle;
+      critical_angle = read_accel();
+      if(!critical_angle){
+        state = ACCEL;
+        pour_total += (millis() - pour_initial_time);
+        }
+    }
+
+}
+
 }
