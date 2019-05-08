@@ -55,6 +55,21 @@ void loop() {
     if (match_UPC(text, dataBlock2, data_size)){
             Serial.println("Tag: 2");
     }
+    long st = millis();
+    while (!radio.available()){
+      if (((millis() - st) > 3000)){
+        Serial.print("TIMEOUT DURING TAG READ");
+        break;
+      }
+    }
+    long pour_total;
+    
+    radio.read(&pour_total, sizeof(pour_total));
+    Serial.print("Oz: ");
+    Serial.print(pour_total);
+    Serial.print(" : ");
+    double pour_oz = (double(pour_total) / 1000) /1.507;
+    Serial.println(pour_oz);
   }
 }
 
